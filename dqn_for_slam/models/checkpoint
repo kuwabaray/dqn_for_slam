@@ -1,0 +1,2 @@
+model_checkpoint_path: "dpg_RobotEnv-v0_weights_121411.h5f"
+all_model_checkpoint_paths: "dpg_RobotEnv-v0_weights_121411.h5f"
