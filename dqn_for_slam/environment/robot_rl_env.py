@@ -140,7 +140,7 @@ class RobotEnv(gym.Env):
         self.ranges = None
 
         self._send_action(0, 0)  # stop robot moving
-        self._turtlebot3_reset()  # initialize gazebo robot status
+        self._rosbot_reset()  # initialize gazebo robot status
 
         # clear map
         rospy.wait_for_service('/slam_cmd_srv')
@@ -159,13 +159,13 @@ class RobotEnv(gym.Env):
         # TODO (Kuwabara): add process when self.next_stage is None
         return self.next_state
 
-    def _turtlebot3_reset(self) -> None:
+    def _rosbot_reset(self) -> None:
         """
         """
         rospy.wait_for_service('gazebo/set_model_state')
 
         model_state = ModelState()
-        model_state.model_name = 'turtlebot3_burger'
+        model_state.model_name = 'rosbot'
         model_state.pose.position.x = INITIAL_POS_X
         model_state.pose.position.y = INITIAL_POS_Y
         model_state.pose.position.z = 0
