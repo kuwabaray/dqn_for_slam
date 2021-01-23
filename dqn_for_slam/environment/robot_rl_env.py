@@ -187,17 +187,17 @@ class RobotEnv(gym.Env):
         run action and return results
         """
         if action == 0:  # turn left
-            steering = 1.159
-            throttle = 0.08
+            steering = 1.5
+            throttle = 0.8
         elif action == 1:  # turn right
-            steering = -1.159
-            throttle = 0.08
+            steering = -1.5
+            throttle = 0.8
         elif action == 2:  # straight
             steering = 0
-            throttle = 0.1
+            throttle = 0.8
         elif action == 3:  # backward
             steering = 0
-            throttle = -0.1
+            throttle = -0.8
         else:
             raise ValueError("Invalid action")
 
