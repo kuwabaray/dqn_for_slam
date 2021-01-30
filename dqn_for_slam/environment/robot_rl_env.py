@@ -11,6 +11,7 @@ from geometry_msgs.msg import Twist, Point, Quaternion
 from gazebo_msgs.srv import SetModelState
 from gazebo_msgs.msg import ModelState
 from sensor_msgs.msg import LaserScan
+from std_srvs.srv import Empty
 
 from gmapping.srv import SlamCmd
 
@@ -117,6 +118,9 @@ class RobotEnv(gym.Env):
         self.ack_publisher = rospy.Publisher('/cmd_vel', Twist, queue_size=100)
         self.gazebo_reset_service = rospy.ServiceProxy('/slam_cmd_srv', SlamCmd)
         self.gazebo_model_state_service = rospy.ServiceProxy('/gazebo/set_model_state', SetModelState)
+        self.unpause = rospy.ServiceProxy('/gazebo/unpause_physics', Empty)
+        self.pause = rospy.ServiceProxy('/gazebo/pause_physics', Empty)
+        self.reset_proxy = rospy.ServiceProxy('/gazebo/reset_simulation', Empty)
         rospy.init_node('rl_dqn', anonymous=True)
 
         # Subscribe to ROS topics and register callbacks
@@ -129,18 +133,6 @@ class RobotEnv(gym.Env):
         initiate status and  return the first observed values
         """
         rospy.loginfo('start resetting')
-        self.done = False
-        self.position = Point(INITIAL_POS_X, INITIAL_POS_Y, 0)
-        self.orientation = Quaternion(0, 0, 0, 0)
-        self.steps_in_episode = 0
-        self.map_completeness_pct = 0
-        self.last_map_completeness_pct = 0
-        self.reward_in_episode = 0
-        self.next_state = None
-        self.ranges = None
-
-        self._send_action(0, 0)  # stop robot moving
-        self._rosbot_reset()  # initialize gazebo robot status
 
         # clear map
         rospy.wait_for_service('/slam_cmd_srv')
@@ -149,11 +141,35 @@ class RobotEnv(gym.Env):
         else:
             rospy.logerr('map cannot be reset')
 
-        time.sleep(SLEEP_AFTER_RESET_TIME)  # wait map become clear
+        self.done = False
+        self.position = Point(INITIAL_POS_X, INITIAL_POS_Y, 0)
+        self.orientation = Quaternion(0, 0, 0, 0)
+        self.steps_in_episode = 0
+        self.map_completeness_pct = 0
+        self.last_map_completeness_pct = 0
+        self.reward_in_episode = 0
+        self.occupancy_grid = None
+        self.next_state = None
+        self.ranges = None
 
+        self._rosbot_reset()  # initialize gazebo robot status
+
+        rospy.wait_for_service('/gazebo/unpause_physics')
+        try:
+            self.unpause()
+        except (rospy.ServiceException) as e:
+            print("/gazebo/unpause_physics service call failed")
+
+        self._send_action(0, 0)  # stop robot moving
         self._update_map_completeness()
         self._update_state()
         self._infer_reward()
+
+        rospy.wait_for_service('/gazebo/pause_physics')
+        try:
+            self.pause()
+        except (rospy.ServiceException) as e:
+            print("/gazebo/pause_physics service call failed")
 
         rospy.loginfo('end resetting')
         # TODO (Kuwabara): add process when self.next_stage is None
@@ -186,6 +202,12 @@ class RobotEnv(gym.Env):
         """
         run action and return results
         """
+        rospy.wait_for_service('/gazebo/unpause_physics')
+        try:
+            self.unpause()
+        except (rospy.ServiceException) as e:
+            print("/gazebo/unpause_physics service call failed")
+
         if action == 0:  # turn left
             steering = 1.5
             throttle = 0.8
@@ -212,6 +234,13 @@ class RobotEnv(gym.Env):
         time.sleep(SLEEP_BETWEEN_ACTION_AND_REWARD_CALCULATION)
         self._update_map_completeness()
         self._update_state()
+
+        rospy.wait_for_service('/gazebo/pause_physics')
+        try:
+            self.pause()
+        except (rospy.ServiceException) as e:
+            print("/gazebo/pause_physics service call failed")
+
         self._infer_reward()
 
         # TODO (Kuwabara): add process when self.next_stage or self.reward is None
@@ -234,6 +263,8 @@ class RobotEnv(gym.Env):
         """
 
         # adapt number of sensor information to TRAINING_IMAGE_SIZE
+        while not self.ranges:
+            time.sleep(0.1)
         size = len(self.ranges)
         x = np.linspace(0, size - 1, TRAINING_IMAGE_SIZE)
         xp = np.arange(size)
@@ -255,6 +286,7 @@ class RobotEnv(gym.Env):
         ])
 
         self.next_state = np.concatenate([sensor_state, numeric_state])
+        self.ranges = None
 
     def _infer_reward(self) -> None:
         """
@@ -287,6 +319,7 @@ class RobotEnv(gym.Env):
 
         self.last_map_completeness_pct = self.map_completeness_pct
         self.map_completeness_pct = ((num_occupied + num_unoccupied) / sum_grid) / MAP_SIZE_RATIO
+        self.occupancy_grid = None
 
     def _send_action(self, steering: float, throttle: float) -> None:
         speed = Twist()
