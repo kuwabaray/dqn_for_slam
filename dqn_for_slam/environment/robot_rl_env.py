@@ -1,11 +1,13 @@
 from typing import Tuple
 import logging
 import time
+import os
 
 import gym
 from gym import spaces
 import numpy as np
 import rospy
+from nav_msgs.srv import GetMap
 from nav_msgs.msg import Odometry, OccupancyGrid
 from geometry_msgs.msg import Twist, Point, Quaternion
 from gazebo_msgs.srv import SetModelState
@@ -14,6 +16,7 @@ from sensor_msgs.msg import LaserScan
 from std_srvs.srv import Empty
 
 from gmapping.srv import SlamCmd
+from .. import rl_worker
 
 INITIAL_POS_X = 0.0
 INITIAL_POS_Y = 0.0
@@ -27,8 +30,8 @@ MAX_QW = 1.
 MAX_QX = 1.
 MAX_QY = 1.
 MAX_QZ = 1.
-MAX_ACTION_NUM = 5
-MAX_STEPS = 500000
+MAX_ACTION_NUM = 3
+MAX_STEPS = 60000
 MAX_MAP_COMPLETENESS = 100.
 
 MIN_PX = -5
@@ -37,19 +40,15 @@ MIN_ACTION_NUM = 0
 MIN_STEPS = 0
 MIN_MAP_COMPLETENESS = 0.
 
-MAP_SIZE_RATIO = 0.27
-MAX_STEPS_IN_EPS = 100
-MAP_COMPLETENESS_THRESHOLD = 0.65
-COLLISION_THRESHOLD = 0.2
+# TODO (Kuwabara) adust it
+MAP_SIZE_RATIO = 0.22
+# TODO (Kuwabara) adust it
+MAX_STEPS_IN_EPS = 300
+MAP_COMPLETENESS_THRESHOLD = 80.
+COLLISION_THRESHOLD = 0.21
 
-REWARD_MAP_COMPLETED = 1.
-REWARD_CRASHED = -1.
-
-SLEEP_BETWEEN_ACTION_AND_REWARD_CALCULATION = 0.3
-SLEEP_AFTER_RESET_TIME = 1
-
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+REWARD_MAP_COMPLETED = 100.
+REWARD_CRASHED = -100.
 
 
 class RobotEnv(gym.Env):
@@ -123,17 +122,20 @@ class RobotEnv(gym.Env):
         self.reset_proxy = rospy.ServiceProxy('/gazebo/reset_simulation', Empty)
         rospy.init_node('rl_dqn', anonymous=True)
 
-        # Subscribe to ROS topics and register callbacks
-        rospy.Subscriber('/odom', Odometry, self._callback_pose)
-        rospy.Subscriber('/scan', LaserScan, self._callback_scan)
-        rospy.Subscriber('/map', OccupancyGrid, self._callback_map)
-
     def reset(self) -> np.ndarray:
         """
         initiate status and  return the first observed values
         """
         rospy.loginfo('start resetting')
 
+        rospy.wait_for_service('/gazebo/unpause_physics')
+        try:
+            self.unpause()
+        except (rospy.ServiceException) as e:
+            rospy.loginfo("/gazebo/unpause_physics service call failed")
+        
+        self._send_action(0, 0)  # stop robot moving
+  
         # clear map
         rospy.wait_for_service('/slam_cmd_srv')
         if self.gazebo_reset_service(1):
@@ -153,14 +155,6 @@ class RobotEnv(gym.Env):
         self.ranges = None
 
         self._rosbot_reset()  # initialize gazebo robot status
-
-        rospy.wait_for_service('/gazebo/unpause_physics')
-        try:
-            self.unpause()
-        except (rospy.ServiceException) as e:
-            print("/gazebo/unpause_physics service call failed")
-
-        self._send_action(0, 0)  # stop robot moving
         self._update_map_completeness()
         self._update_state()
         self._infer_reward()
@@ -169,7 +163,7 @@ class RobotEnv(gym.Env):
         try:
             self.pause()
         except (rospy.ServiceException) as e:
-            print("/gazebo/pause_physics service call failed")
+            rospy.loginfo("/gazebo/pause_physics service call failed")
 
         rospy.loginfo('end resetting')
         # TODO (Kuwabara): add process when self.next_stage is None
@@ -196,30 +190,35 @@ class RobotEnv(gym.Env):
         model_state.twist.angular.y = 0
         model_state.twist.angular.z = 0
 
-        self.gazebo_model_state_service(model_state)
-
+        try:
+            self.gazebo_model_state_service(model_state)
+        except (rospy.ServiceException) as e:
+            rospy.loginfo("/gazebo/set_model_state service call failed")       
+  
     def step(self, action: int) -> Tuple[np.ndarray, float, bool, dict]:
         """
         run action and return results
-        """
+        """        
+        rospy.loginfo('start step' + str(self.steps + 1))
+
         rospy.wait_for_service('/gazebo/unpause_physics')
         try:
             self.unpause()
         except (rospy.ServiceException) as e:
-            print("/gazebo/unpause_physics service call failed")
+            rospy.loginfo("/gazebo/unpause_physics service call failed")
 
         if action == 0:  # turn left
-            steering = 1.5
-            throttle = 0.8
+            steering = 1.0
+            throttle = 0.3
         elif action == 1:  # turn right
-            steering = -1.5
-            throttle = 0.8
+            steering = -1.0
+            throttle = 0.3
         elif action == 2:  # straight
             steering = 0
-            throttle = 0.8
+            throttle = 0.3
         elif action == 3:  # backward
             steering = 0
-            throttle = -0.8
+            throttle = -0.3
         else:
             raise ValueError("Invalid action")
 
@@ -231,7 +230,6 @@ class RobotEnv(gym.Env):
         self.steps += 1
         self.steps_in_episode += 1
         self._send_action(steering, throttle)
-        time.sleep(SLEEP_BETWEEN_ACTION_AND_REWARD_CALCULATION)
         self._update_map_completeness()
         self._update_state()
 
@@ -239,32 +237,41 @@ class RobotEnv(gym.Env):
         try:
             self.pause()
         except (rospy.ServiceException) as e:
-            print("/gazebo/pause_physics service call failed")
+            rospy.loginfo("/gazebo/pause_physics service call failed")
 
         self._infer_reward()
 
-        # TODO (Kuwabara): add process when self.next_stage or self.reward is None
+        if self.steps >= MAX_MAP_COMPLETENESS:
+            rl_worker.add_map_completeness(self.map_completeness_pct)
 
+        # TODO (Kuwabara): add process when self.next_stage or self.reward is None
+        rospy.loginfo('end step' + str(self.steps))
         info = {}
         return self.next_state, self.reward, self.done, info
 
-    def _callback_pose(self, data: Odometry) -> None:
-        self.position = data.pose.pose.position
-        self.orientation = data.pose.pose.orientation
-
-    def _callback_scan(self, data: LaserScan) -> None:
-        self.ranges = data.ranges
-
-    def _callback_map(self, data: OccupancyGrid) -> None:
-        self.occupancy_grid = data.data
-
+    def close(self) -> None:
+        """
+        kill all ros node except for roscore
+        """
+        nodes = os.popen('rosnode list').readlines()
+        for i in range(len(nodes)):
+            nodes[i] = nodes[i].replace('\n', '')
+        for node in nodes:
+            os.system('rosnode kill ' + node) 
+   
     def _update_state(self) -> None:
         """
         """
-
+        rospy.loginfo('waiting lidar scan')
         # adapt number of sensor information to TRAINING_IMAGE_SIZE
+        self.ranges = None
         while not self.ranges:
-            time.sleep(0.1)
+          try:
+                data = rospy.wait_for_message('/scan', LaserScan, timeout=1)
+                self.ranges = data.ranges
+          except:
+                pass
+        rospy.loginfo('end waiting scan')
         size = len(self.ranges)
         x = np.linspace(0, size - 1, TRAINING_IMAGE_SIZE)
         xp = np.arange(size)
@@ -273,6 +280,19 @@ class RobotEnv(gym.Env):
 
         # update distance to obstacles
         self.min_distance = np.amin(sensor_state)
+
+        rospy.loginfo('waiting odom')
+        # adapt number of sensor information to TRAINING_IMAGE_SIZE
+        self.position = None
+        self.orientation = None
+        while not self.position:
+          try:
+                data = rospy.wait_for_message('/odom', Odometry, timeout=1)
+                self.position = data.pose.pose.position
+                self.orientation = data.pose.pose.orientation
+          except:
+                pass
+        rospy.loginfo('end waiting odom')
 
         numeric_state = np.array([
             self.position.x,
@@ -286,27 +306,37 @@ class RobotEnv(gym.Env):
         ])
 
         self.next_state = np.concatenate([sensor_state, numeric_state])
-        self.ranges = None
 
     def _infer_reward(self) -> None:
         """
         """
-
+        
         if self.map_completeness_pct > MAP_COMPLETENESS_THRESHOLD:
             self.reward = REWARD_MAP_COMPLETED
-
+            state = 'comp'
         elif self.min_distance < COLLISION_THRESHOLD:
             # Robot likely hit the wall
             self.reward = REWARD_CRASHED
-
+            state = 'crashed'
         else:
             self.reward = self.map_completeness_pct - self.last_map_completeness_pct
-
+            state = ''
+        
         self.reward_in_episode += self.reward
+        rospy.loginfo('reward:' + str(self.reward) + ' ' + state)
 
     def _update_map_completeness(self) -> None:
+        
+        rospy.loginfo('waiting map')
+        self.occupancy_grid = None
         while not self.occupancy_grid:
-            time.sleep(0.1)
+          try:
+                data = rospy.wait_for_message('/map', OccupancyGrid, timeout=1)
+                self.occupancy_grid = data.data
+          except:
+                pass
+        
+        rospy.loginfo('ended waiting map')
 
         sum_grid = len(self.occupancy_grid)
         num_occupied = 0
@@ -318,8 +348,7 @@ class RobotEnv(gym.Env):
                 num_occupied += 1
 
         self.last_map_completeness_pct = self.map_completeness_pct
-        self.map_completeness_pct = ((num_occupied + num_unoccupied) / sum_grid) / MAP_SIZE_RATIO
-        self.occupancy_grid = None
+        self.map_completeness_pct = ((num_occupied + num_unoccupied) * 100 / sum_grid) / MAP_SIZE_RATIO
 
     def _send_action(self, steering: float, throttle: float) -> None:
         speed = Twist()
