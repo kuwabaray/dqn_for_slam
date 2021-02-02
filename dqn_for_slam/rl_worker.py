@@ -26,18 +26,10 @@ dir_path = file_path[:(len(file_path) - len('rl_worker.py'))]
 MODELS_PATH = dir_path + 'models/'   # model save directory
 FIGURES_PATH = dir_path + 'figures/'
 
+map_completeness = []
 
-def kill_all_node() -> None:
-    """
-    kill all ros node except for roscore
-    """
-    nodes = os.popen('rosnode list').readlines()
-    for i in range(len(nodes)):
-        nodes[i] = nodes[i].replace('\n', '')
-
-    for node in nodes:
-        os.system('rosnode kill ' + node)
-
+def add_map_completeness(value: float) -> None:
+    map_completeness.append(value)
 
 def main() -> None:
     env = gym.make(ENV_NAME)
@@ -50,7 +42,7 @@ def main() -> None:
     model.add(Dense(nb_actions, activation='linear'))
     print(model.summary())
 
-    memory = SequentialMemory(limit=100000, window_length=1)
+    memory = SequentialMemory(limit=60000, window_length=1)
     policy = CustomEpsGreedy(max_eps=0.6, min_eps=0.1, eps_decay=0.9997)
 
     agent = DQNAgent(
@@ -64,13 +56,11 @@ def main() -> None:
     agent.compile(optimizer=Adam(lr=1e-3), metrics=['mae'])
 
     history = agent.fit(env,
-                        nb_steps=100000,
+                        nb_steps=60000,
                         visualize=False,
                         nb_max_episode_steps=300,
                         log_interval=300,
                         verbose=1)
-
-    kill_all_node()
 
     dt_now = datetime.datetime.now()
     agent.save_weights(
@@ -82,10 +72,16 @@ def main() -> None:
     plt.plot(history.history['episode_reward'])
     plt.xlabel("episode")
     plt.ylabel("reward")
-
+      
+    fig = plt.figure()
+    plt.plot(map_completeness)
+    plt.xlabel('episode')
+    plt.ylabel('map completeness')
+  
     plt.savefig(FIGURES_PATH + 'learning_results_{}{}{}.png'
                 .format(dt_now.month, dt_now.day, dt_now.hour))
 
+    
 
 if __name__ == '__main__':
     main()
