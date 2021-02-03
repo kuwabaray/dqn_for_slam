@@ -52,6 +52,9 @@ MIN_ACTION_NUM = 0
 MIN_STEPS = 0
 MIN_MAP_COMPLETENESS = 0.
 
+STEERING = rospy.get_param('rlslam/steering')
+THROTTLE = rospy.get_param('rlslam/throttle') 
+
 
 class RobotEnv(gym.Env):
     """
@@ -203,17 +206,17 @@ class RobotEnv(gym.Env):
             rospy.loginfo("/gazebo/unpause_physics service call failed")
 
         if action == 0:  # turn left
-            steering = 1.0
-            throttle = 0.3
+            steering = STEERING
+            throttle = THROTTLE
         elif action == 1:  # turn right
-            steering = -1.0
-            throttle = 0.3
+            steering = -1 * STEERING
+            throttle = THROTTLE
         elif action == 2:  # straight
             steering = 0
-            throttle = 0.3
+            throttle = THROTTLE
         elif action == 3:  # backward
             steering = 0
-            throttle = -0.3
+            throttle = -1 * THROTTLE
         else:
             raise ValueError("Invalid action")
 

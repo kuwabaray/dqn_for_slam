@@ -23,4 +23,6 @@ rlslam:
   map_completed_threshold: 85.
   reward_map_completed: 100.
   reward_crashed: -10.
-  
+
+  steering: 1.0
+  throttle: 0.3  
