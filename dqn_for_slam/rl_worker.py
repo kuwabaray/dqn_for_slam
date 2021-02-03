@@ -70,7 +70,7 @@ if __name__ == '__main__':
 
     # early_stopping = EarlyStopping(monitor='episode_reward', patience=0, verbose=1)
     history = agent.fit(env,
-                        nb_steps=250,
+                        nb_steps=100000,
                         visualize=False,
                         nb_max_episode_steps=250,
                         log_interval=250,
