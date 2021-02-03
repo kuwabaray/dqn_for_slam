@@ -1,0 +1,26 @@
+rlslam:
+  
+  steps_in_episode: 300
+  
+  initial_posx: 0.0
+  initial_posy: 0.0
+  
+  obs_space_max:
+    px: 5.
+    py: 5.
+    qz: 1.
+   
+  obs_space_min:
+    px: -5.
+    py: -5.
+    qz: -1.
+
+  map_size_ratio: 0.22  
+
+  scan_max_distance: 4.0
+  training_image_size: 360
+  crash_distance: 0.21
+  map_completed_threshold: 85.
+  reward_map_completed: 100.
+  reward_crashed: -10.
+  
