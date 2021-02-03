@@ -30,11 +30,13 @@ for params, namespace in parameters_list:
 
 INITIAL_POS_X = rospy.get_param('rlslam/initial_posx')
 INITIAL_POS_Y = rospy.get_param('rlslam/initial_posy')
+
 LIDAR_SCAN_MAX_DISTANCE = rospy.get_param('rlslam/scan_max_distance')
 TRAINING_IMAGE_SIZE = rospy.get_param('rlslam/training_image_size')
 MAP_SIZE_RATIO = rospy.get_param('rlslam/map_size_ratio')
 MAP_COMPLETENESS_THRESHOLD = rospy.get_param('rlslam/map_completed_threshold')
 COLLISION_THRESHOLD = rospy.get_param('rlslam/crash_distance')
+
 REWARD_MAP_COMPLETED = rospy.get_param('rlslam/reward_map_completed')
 REWARD_CRASHED = rospy.get_param('rlslam/reward_crashed')
 
@@ -54,6 +56,8 @@ MIN_MAP_COMPLETENESS = 0.
 
 STEERING = rospy.get_param('rlslam/steering')
 THROTTLE = rospy.get_param('rlslam/throttle') 
+
+TIMEOUT = rospy.get_param('rlslam/timeout')
 
 
 class RobotEnv(gym.Env):
@@ -264,7 +268,7 @@ class RobotEnv(gym.Env):
         self.ranges = None
         while not self.ranges:
           try:
-                data = rospy.wait_for_message('/scan', LaserScan, timeout=1)
+                data = rospy.wait_for_message('/scan', LaserScan, timeout= TIMEOUT)
                 self.ranges = data.ranges
           except:
                 pass
@@ -284,7 +288,7 @@ class RobotEnv(gym.Env):
         self.orientation = None
         while not self.position:
           try:
-                data = rospy.wait_for_message('/odom', Odometry, timeout=1)
+                data = rospy.wait_for_message('/odom', Odometry, timeout=TIMEOUT)
                 self.position = data.pose.pose.position
                 self.orientation = data.pose.pose.orientation
           except:
@@ -325,7 +329,7 @@ class RobotEnv(gym.Env):
         self.occupancy_grid = None
         while not self.occupancy_grid:
           try:
-                data = rospy.wait_for_message('/map', OccupancyGrid, timeout=1)
+                data = rospy.wait_for_message('/map', OccupancyGrid, timeout=TIMEOUT)
                 self.occupancy_grid = data.data
           except:
                 pass
@@ -335,15 +339,19 @@ class RobotEnv(gym.Env):
         sum_grid = len(self.occupancy_grid)
         num_occupied = 0
         num_unoccupied = 0
+        num_negative = 0
         for n in self.occupancy_grid:
             if n == 0:
                 num_unoccupied += 1
             elif n == 100:
-                num_occupied += 1
-
+                num_occupied += 1 
+            elif n < 0:
+                num_negative += 1
+        
         self.last_map_completeness_pct = self.map_completeness_pct
         self.map_completeness_pct = ((num_occupied + num_unoccupied) * 100 / sum_grid) / MAP_SIZE_RATIO
-
+        rospy.loginfo('map completenes:' + str(self.map_completeness_pct)) 
+    
     def _send_action(self, steering: float, throttle: float) -> None:
         speed = Twist()
         speed.angular.z = steering
