@@ -32,7 +32,17 @@ map_completeness = []
 
 def add_map_completeness(value: float) -> None:
     map_completeness.append(value)
-    
+
+def kill_all_nodes() -> None:
+    """
+    kill all ros node except for roscore
+    """
+    nodes = os.popen('rosnode list').readlines()
+    for i in range(len(nodes)):
+        nodes[i] = nodes[i].replace('\n', '')
+    for node in nodes:
+        os.system('rosnode kill ' + node)    
+
 
 if __name__ == '__main__':
     env = gym.make(ENV_NAME)
@@ -45,7 +55,7 @@ if __name__ == '__main__':
     model.add(Dense(nb_actions, activation='linear'))
     print(model.summary())
 
-    memory = SequentialMemory(limit=75000, window_length=1)
+    memory = SequentialMemory(limit=100000, window_length=1)
     policy = CustomEpsGreedy(max_eps=0.6, min_eps=0.1, eps_decay=0.9997)
 
     agent = DQNAgent(
@@ -60,11 +70,13 @@ if __name__ == '__main__':
 
     # early_stopping = EarlyStopping(monitor='episode_reward', patience=0, verbose=1)
     history = agent.fit(env,
-                        nb_steps=75000,
+                        nb_steps=250,
                         visualize=False,
                         nb_max_episode_steps=250,
                         log_interval=250,
                         verbose=1)
+    
+    kill_all_nodes()    
 
     dt_now = datetime.datetime.now()
     agent.save_weights(
