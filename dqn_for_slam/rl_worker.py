@@ -7,6 +7,7 @@ import os
 import tensorflow as tf
 from tensorflow.keras.layers import Dense, Flatten
 from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras import regularizers
 
 from rl.agents.dqn import DQNAgent
@@ -42,7 +43,7 @@ def main() -> None:
     model.add(Dense(nb_actions, activation='linear'))
     print(model.summary())
 
-    memory = SequentialMemory(limit=60000, window_length=1)
+    memory = SequentialMemory(limit=75000, window_length=1)
     policy = CustomEpsGreedy(max_eps=0.6, min_eps=0.1, eps_decay=0.9997)
 
     agent = DQNAgent(
@@ -54,13 +55,15 @@ def main() -> None:
         batch_size=64)
 
     agent.compile(optimizer=Adam(lr=1e-3), metrics=['mae'])
-
+   
+    early_stopping = EarlyStopping(monitor='episode_reward', patience=0, verbose=1) 
     history = agent.fit(env,
-                        nb_steps=60000,
+                        nb_steps=75000,
                         visualize=False,
-                        nb_max_episode_steps=300,
-                        log_interval=300,
-                        verbose=1)
+                        nb_max_episode_steps=250,
+                        log_interval=250,
+                        verbose=1,
+                        callbacks=[early_stopping])
 
     dt_now = datetime.datetime.now()
     agent.save_weights(
