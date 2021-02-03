@@ -31,8 +31,8 @@ MAX_QX = 1.
 MAX_QY = 1.
 MAX_QZ = 1.
 MAX_ACTION_NUM = 3
-MAX_STEPS = 60000
 MAX_MAP_COMPLETENESS = 100.
+MAX_STEPS = 250
 
 MIN_PX = -5
 MIN_PY = -5
@@ -43,8 +43,7 @@ MIN_MAP_COMPLETENESS = 0.
 # TODO (Kuwabara) adust it
 MAP_SIZE_RATIO = 0.22
 # TODO (Kuwabara) adust it
-MAX_STEPS_IN_EPS = 300
-MAP_COMPLETENESS_THRESHOLD = 80.
+MAP_COMPLETENESS_THRESHOLD = 90.
 COLLISION_THRESHOLD = 0.21
 
 REWARD_MAP_COMPLETED = 100.
@@ -73,7 +72,6 @@ class RobotEnv(gym.Env):
         self.map_completeness_pct = MIN_MAP_COMPLETENESS
         self.occupancy_grid = None
         self.done = False
-        self.steps = 0
         self.steps_in_episode = 0
         self.min_distance = 100
         self.reward = None
@@ -199,7 +197,7 @@ class RobotEnv(gym.Env):
         """
         run action and return results
         """        
-        rospy.loginfo('start step' + str(self.steps + 1))
+        # rospy.loginfo('start step' + str(self.steps_in_episode + 1))
 
         rospy.wait_for_service('/gazebo/unpause_physics')
         try:
@@ -227,7 +225,6 @@ class RobotEnv(gym.Env):
         self.done = False
         self.next_state = None
 
-        self.steps += 1
         self.steps_in_episode += 1
         self._send_action(steering, throttle)
         self._update_map_completeness()
@@ -241,11 +238,11 @@ class RobotEnv(gym.Env):
 
         self._infer_reward()
 
-        if self.steps >= MAX_MAP_COMPLETENESS:
+        if self.steps_in_episode >= MAX_STEPS:
             rl_worker.add_map_completeness(self.map_completeness_pct)
 
         # TODO (Kuwabara): add process when self.next_stage or self.reward is None
-        rospy.loginfo('end step' + str(self.steps))
+        # rospy.loginfo('end step' + str(self.steps_in_episode))
         info = {}
         return self.next_state, self.reward, self.done, info
 
@@ -301,7 +298,7 @@ class RobotEnv(gym.Env):
             self.orientation.y,
             self.orientation.z,
             self.orientation.w,
-            self.steps,
+            self.steps_in_episode,
             self.map_completeness_pct
         ])
 
