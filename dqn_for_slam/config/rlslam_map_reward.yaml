@@ -1,6 +1,6 @@
 rlslam:
   
-  steps_in_episode: 300
+  steps_in_episode: 250
   
   initial_posx: 0.0
   initial_posy: 0.0
@@ -8,12 +8,12 @@ rlslam:
   obs_space_max:
     px: 5.
     py: 5.
-    qz: 1.
+    qz: inf
    
   obs_space_min:
     px: -5.
     py: -5.
-    qz: -1.
+    qz: -inf
 
   map_size_ratio: 0.22  
 
@@ -21,8 +21,10 @@ rlslam:
   training_image_size: 360
   crash_distance: 0.21
   map_completed_threshold: 85.
-  reward_map_completed: 100.
+  reward_map_completed: 10.
   reward_crashed: -10.
 
   steering: 1.0
   throttle: 0.3  
+
+  timeout: 0.5
