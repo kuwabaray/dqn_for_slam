@@ -29,10 +29,12 @@ FIGURES_PATH = dir_path + 'figures/'
 
 map_completeness = []
 
+
 def add_map_completeness(value: float) -> None:
     map_completeness.append(value)
+    
 
-def main() -> None:
+if __name__ == '__main__':
     env = gym.make(ENV_NAME)
     nb_actions = env.action_space.n
 
@@ -55,15 +57,14 @@ def main() -> None:
         batch_size=64)
 
     agent.compile(optimizer=Adam(lr=1e-3), metrics=['mae'])
-   
-    early_stopping = EarlyStopping(monitor='episode_reward', patience=0, verbose=1) 
+
+    # early_stopping = EarlyStopping(monitor='episode_reward', patience=0, verbose=1)
     history = agent.fit(env,
                         nb_steps=75000,
                         visualize=False,
                         nb_max_episode_steps=250,
                         log_interval=250,
-                        verbose=1,
-                        callbacks=[early_stopping])
+                        verbose=1)
 
     dt_now = datetime.datetime.now()
     agent.save_weights(
@@ -75,16 +76,11 @@ def main() -> None:
     plt.plot(history.history['episode_reward'])
     plt.xlabel("episode")
     plt.ylabel("reward")
-      
+
     fig = plt.figure()
     plt.plot(map_completeness)
     plt.xlabel('episode')
     plt.ylabel('map completeness')
-  
+
     plt.savefig(FIGURES_PATH + 'learning_results_{}{}{}.png'
                 .format(dt_now.month, dt_now.day, dt_now.hour))
-
-    
-
-if __name__ == '__main__':
-    main()
