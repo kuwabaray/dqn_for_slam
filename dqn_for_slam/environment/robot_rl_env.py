@@ -50,7 +50,7 @@ MAX_STEPS = rospy.get_param('rlslam/steps_in_episode')
 MIN_PX = rospy.get_param('rlslam/obs_space_min/px')
 MIN_PY = rospy.get_param('rlslam/obs_space_min/py')
 MIN_QZ = rospy.get_param('rlslam/obs_space_min/qz')
-MIN_ACTION_NUM = 0
+MIN_ACTION_NUM = -1
 MIN_STEPS = 0
 MIN_MAP_COMPLETENESS = 0.
 
@@ -86,6 +86,8 @@ class RobotEnv(gym.Env):
         self.min_distance = 100
         self.reward = None
         self.reward_in_episode = 0
+        self.now_action = -1
+        self.last_action = -1
         self.last_map_completeness_pct = 0
         self.next_state = None
 
@@ -101,6 +103,7 @@ class RobotEnv(gym.Env):
             MAX_PX,
             MAX_PY,
             MAX_QZ,
+            MAX_ACTION_NUM,
             MAX_STEPS,
             MAX_MAP_COMPLETENESS
         ])
@@ -108,6 +111,7 @@ class RobotEnv(gym.Env):
             MIN_PX,
             MIN_PY,
             MIN_QZ,
+            MIN_ACTION_NUM, 
             MIN_STEPS,
             MIN_MAP_COMPLETENESS
         ])
@@ -208,7 +212,9 @@ class RobotEnv(gym.Env):
             self.unpause()
         except (rospy.ServiceException) as e:
             rospy.loginfo("/gazebo/unpause_physics service call failed")
-
+        
+        self.last_action = self.now_action
+        self.now_action = action
         if action == 0:  # turn left
             steering = STEERING
             throttle = THROTTLE
@@ -299,6 +305,7 @@ class RobotEnv(gym.Env):
             self.position.x,
             self.position.y,
             self.orientation.z,
+            self.last_action,
             self.steps_in_episode,
             self.map_completeness_pct
         ])
@@ -345,8 +352,6 @@ class RobotEnv(gym.Env):
                 num_unoccupied += 1
             elif n == 100:
                 num_occupied += 1 
-            elif n < 0:
-                num_negative += 1
         
         self.last_map_completeness_pct = self.map_completeness_pct
         self.map_completeness_pct = ((num_occupied + num_unoccupied) * 100 / sum_grid) / MAP_SIZE_RATIO
