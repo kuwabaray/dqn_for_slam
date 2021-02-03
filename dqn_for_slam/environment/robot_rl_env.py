@@ -7,6 +7,7 @@ import gym
 from gym import spaces
 import numpy as np
 import rospy
+import rosparam
 from nav_msgs.srv import GetMap
 from nav_msgs.msg import Odometry, OccupancyGrid
 from geometry_msgs.msg import Twist, Point, Quaternion
@@ -18,36 +19,38 @@ from std_srvs.srv import Empty
 from gmapping.srv import SlamCmd
 from .. import rl_worker
 
-INITIAL_POS_X = 0.0
-INITIAL_POS_Y = 0.0
 
-LIDAR_SCAN_MAX_DISTANCE = 4.0
-TRAINING_IMAGE_SIZE = 360
+file_path = __file__
+dir_path = file_path[:(len(file_path) - len('environment/robot_rl_env.py'))] + 'config/'
+config_file_name = 'rlslam_map_reward.yaml'
+config_file_path = os.path.join(dir_path, config_file_name)
+parameters_list=rosparam.load_file(config_file_path)
+for params, namespace in parameters_list:
+	rosparam.upload_params(namespace,params)
 
-MAX_PX = 5.
-MAX_PY = 5.
-MAX_QW = 1.
-MAX_QX = 1.
-MAX_QY = 1.
-MAX_QZ = 1.
+INITIAL_POS_X = rospy.get_param('rlslam/initial_posx')
+INITIAL_POS_Y = rospy.get_param('rlslam/initial_posy')
+LIDAR_SCAN_MAX_DISTANCE = rospy.get_param('rlslam/scan_max_distance')
+TRAINING_IMAGE_SIZE = rospy.get_param('rlslam/training_image_size')
+MAP_SIZE_RATIO = rospy.get_param('rlslam/map_size_ratio')
+MAP_COMPLETENESS_THRESHOLD = rospy.get_param('rlslam/map_completed_threshold')
+COLLISION_THRESHOLD = rospy.get_param('rlslam/crash_distance')
+REWARD_MAP_COMPLETED = rospy.get_param('rlslam/reward_map_completed')
+REWARD_CRASHED = rospy.get_param('rlslam/reward_crashed')
+
+MAX_PX = rospy.get_param('rlslam/obs_space_max/px')
+MAX_PY = rospy.get_param('rlslam/obs_space_max/py')
+MAX_QZ = rospy.get_param('rlslam/obs_space_max/qz')
 MAX_ACTION_NUM = 3
 MAX_MAP_COMPLETENESS = 100.
-MAX_STEPS = 250
+MAX_STEPS = rospy.get_param('rlslam/steps_in_episode')
 
-MIN_PX = -5
-MIN_PY = -5
+MIN_PX = rospy.get_param('rlslam/obs_space_min/px')
+MIN_PY = rospy.get_param('rlslam/obs_space_min/py')
+MIN_QZ = rospy.get_param('rlslam/obs_space_min/qz')
 MIN_ACTION_NUM = 0
 MIN_STEPS = 0
 MIN_MAP_COMPLETENESS = 0.
-
-# TODO (Kuwabara) adust it
-MAP_SIZE_RATIO = 0.22
-# TODO (Kuwabara) adust it
-MAP_COMPLETENESS_THRESHOLD = 90.
-COLLISION_THRESHOLD = 0.21
-
-REWARD_MAP_COMPLETED = 100.
-REWARD_CRASHED = -100.
 
 
 class RobotEnv(gym.Env):
@@ -67,7 +70,7 @@ class RobotEnv(gym.Env):
     def __init__(self) -> None:
 
         self.position = Point(INITIAL_POS_X, INITIAL_POS_Y, 0)
-        self.orientation = Quaternion(0, 0, 0, 0)
+        self.orientation = Quaternion(1, 0, 0, 0)
         self.ranges = None
         self.map_completeness_pct = MIN_MAP_COMPLETENESS
         self.occupancy_grid = None
@@ -90,20 +93,14 @@ class RobotEnv(gym.Env):
         num_high = np.array([
             MAX_PX,
             MAX_PY,
-            MAX_QX,
-            MAX_QY,
             MAX_QZ,
-            MAX_QW,
             MAX_STEPS,
             MAX_MAP_COMPLETENESS
         ])
         num_low = np.array([
             MIN_PX,
             MIN_PY,
-            -1 * MAX_QX,
-            -1 * MAX_QY,
-            -1 * MAX_QZ,
-            -1 * MAX_QW,
+            MIN_QZ,
             MIN_STEPS,
             MIN_MAP_COMPLETENESS
         ])
@@ -143,7 +140,7 @@ class RobotEnv(gym.Env):
 
         self.done = False
         self.position = Point(INITIAL_POS_X, INITIAL_POS_Y, 0)
-        self.orientation = Quaternion(0, 0, 0, 0)
+        self.orientation = Quaternion(1, 0, 0, 0)
         self.steps_in_episode = 0
         self.map_completeness_pct = 0
         self.last_map_completeness_pct = 0
@@ -180,7 +177,7 @@ class RobotEnv(gym.Env):
         model_state.pose.orientation.x = 0
         model_state.pose.orientation.y = 0
         model_state.pose.orientation.z = 0
-        model_state.pose.orientation.w = 0
+        model_state.pose.orientation.w = 1
         model_state.twist.linear.x = 0
         model_state.twist.linear.y = 0
         model_state.twist.linear.z = 0
@@ -294,10 +291,7 @@ class RobotEnv(gym.Env):
         numeric_state = np.array([
             self.position.x,
             self.position.y,
-            self.orientation.x,
-            self.orientation.y,
             self.orientation.z,
-            self.orientation.w,
             self.steps_in_episode,
             self.map_completeness_pct
         ])
