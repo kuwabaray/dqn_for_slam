@@ -256,15 +256,6 @@ class RobotEnv(gym.Env):
         info = {}
         return self.next_state, self.reward, self.done, info
 
-    def close(self) -> None:
-        """
-        kill all ros node except for roscore
-        """
-        nodes = os.popen('rosnode list').readlines()
-        for i in range(len(nodes)):
-            nodes[i] = nodes[i].replace('\n', '')
-        for node in nodes:
-            os.system('rosnode kill ' + node) 
    
     def _update_state(self) -> None:
         """
