@@ -140,8 +140,8 @@ class RobotEnv(gym.Env):
         except (rospy.ServiceException) as e:
             rospy.loginfo("/gazebo/unpause_physics service call failed")
         
-        self._send_action(0, 0)  # stop robot moving
-  
+        self._rosbot_reset()
+ 
         # clear map
         rospy.wait_for_service('/clear_map')
         if self.map_reset_service():
@@ -160,7 +160,6 @@ class RobotEnv(gym.Env):
         self.next_state = None
         self.ranges = None
 
-        self._rosbot_reset()  # initialize gazebo robot status
         self._update_map_completeness()
         self._update_state()
         self._infer_reward()
