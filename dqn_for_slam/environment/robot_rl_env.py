@@ -265,7 +265,7 @@ class RobotEnv(gym.Env):
         self.ranges = None
         while not self.ranges:
           try:
-                data = rospy.wait_for_message('/scan', LaserScan, timeout= TIMEOUT)
+                data = rospy.wait_for_message('/scan_filtered', LaserScan, timeout= TIMEOUT)
                 self.ranges = data.ranges
           except:
                 pass
