@@ -16,7 +16,7 @@ from gazebo_msgs.msg import ModelState
 from sensor_msgs.msg import LaserScan
 from std_srvs.srv import Empty
 
-from gmapping.srv import SlamCmd
+# from gmapping.srv import SlamCmd
 from .. import rl_worker
 
 
@@ -121,7 +121,7 @@ class RobotEnv(gym.Env):
 
         # ROS initialization
         self.ack_publisher = rospy.Publisher('/cmd_vel', Twist, queue_size=100)
-        self.gazebo_reset_service = rospy.ServiceProxy('/slam_cmd_srv', SlamCmd)
+        self.map_reset_service = rospy.ServiceProxy('/clear_map', Empty)
         self.gazebo_model_state_service = rospy.ServiceProxy('/gazebo/set_model_state', SetModelState)
         self.unpause = rospy.ServiceProxy('/gazebo/unpause_physics', Empty)
         self.pause = rospy.ServiceProxy('/gazebo/pause_physics', Empty)
@@ -143,12 +143,12 @@ class RobotEnv(gym.Env):
         self._send_action(0, 0)  # stop robot moving
   
         # clear map
-        rospy.wait_for_service('/slam_cmd_srv')
-        if self.gazebo_reset_service(1):
-            rospy.loginfo('map reset')
+        rospy.wait_for_service('/clear_map')
+        if self.map_reset_service():
+            rospy.loginfo('reset map')
         else:
-            rospy.logerr('map cannot be reset')
-
+            rospy.logerr('could not reset map')
+         
         self.done = False
         self.position = Point(INITIAL_POS_X, INITIAL_POS_Y, 0)
         self.orientation = Quaternion(1, 0, 0, 0)
@@ -171,7 +171,7 @@ class RobotEnv(gym.Env):
         except (rospy.ServiceException) as e:
             rospy.loginfo("/gazebo/pause_physics service call failed")
 
-        rospy.loginfo('end resetting')
+        rospy.loginfo('succeess: reset')
         # TODO (Kuwabara): add process when self.next_stage is None
         return self.next_state
 
