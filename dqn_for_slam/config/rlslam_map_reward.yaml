@@ -24,7 +24,7 @@ rlslam:
   reward_map_completed: 10.
   reward_crashed: -10.
 
-  steering: 1.125
-  throttle: 0.75  
+  steering: 0.7
+  throttle: 0.5  
 
   timeout: 1.0
