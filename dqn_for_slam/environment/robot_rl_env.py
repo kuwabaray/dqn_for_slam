@@ -1,3 +1,4 @@
+
 from typing import Tuple
 import logging
 import time
@@ -8,6 +9,7 @@ from gym import spaces
 import numpy as np
 import rospy
 import rosparam
+import tf2
 from nav_msgs.srv import GetMap
 from nav_msgs.msg import Odometry, OccupancyGrid
 from geometry_msgs.msg import Twist, Point, Quaternion
@@ -59,19 +61,12 @@ THROTTLE = rospy.get_param('rlslam/throttle')
 
 TIMEOUT = rospy.get_param('rlslam/timeout')
 
+SLEEP_BETWEEN_ACTION_AND_REWARD_CALCULATION =rospy.get_param('rlslam/sleep')
+
 
 class RobotEnv(gym.Env):
     """
     Environment for reinforce learning
-    -> generally it defines
-        action
-        status that responds to the action
-    -> also it defines
-        reward for a status
-    Each valuables for the state is updated by ros
-    it gets information of state and run somethings with them
-    -> it don't define functions like "can_move_at" or "transit" or so
-    -> it defines functions like "reward"
     """
 
     def __init__(self) -> None:
@@ -120,12 +115,13 @@ class RobotEnv(gym.Env):
         self.observation_space = spaces.Box(low, high, dtype=np.float32)
 
         # ROS initialization
-        self.ack_publisher = rospy.Publisher('/cmd_vel', Twist, queue_size=100)
+        self.ack_publisher = rospy.Publisher('/cmd_vel', Twist, queue_size=1)
         self.map_reset_service = rospy.ServiceProxy('/clear_map', Empty)
         self.gazebo_model_state_service = rospy.ServiceProxy('/gazebo/set_model_state', SetModelState)
         self.unpause = rospy.ServiceProxy('/gazebo/unpause_physics', Empty)
         self.pause = rospy.ServiceProxy('/gazebo/pause_physics', Empty)
         self.reset_proxy = rospy.ServiceProxy('/gazebo/reset_simulation', Empty)
+        self.listener = tf.TransformListener()
         rospy.init_node('rl_dqn', anonymous=True)
 
     def reset(self) -> np.ndarray:
@@ -140,6 +136,7 @@ class RobotEnv(gym.Env):
         except (rospy.ServiceException) as e:
             rospy.loginfo("/gazebo/unpause_physics service call failed")
         
+        self._send_action(0, 0)
         self._rosbot_reset()
  
         # clear map
@@ -160,9 +157,8 @@ class RobotEnv(gym.Env):
         self.next_state = None
         self.ranges = None
 
-        self._update_map_completeness()
+        # self._update_map_completeness()
         self._update_state()
-        self._infer_reward()
 
         rospy.wait_for_service('/gazebo/pause_physics')
         try:
@@ -170,7 +166,7 @@ class RobotEnv(gym.Env):
         except (rospy.ServiceException) as e:
             rospy.loginfo("/gazebo/pause_physics service call failed")
 
-        rospy.loginfo('succeess: reset')
+        self._infer_reward()
         # TODO (Kuwabara): add process when self.next_stage is None
         return self.next_state
 
@@ -195,10 +191,10 @@ class RobotEnv(gym.Env):
         model_state.twist.angular.y = 0
         model_state.twist.angular.z = 0
 
-        try:
-            self.gazebo_model_state_service(model_state)
-        except (rospy.ServiceException) as e:
-            rospy.loginfo("/gazebo/set_model_state service call failed")       
+        if self.gazebo_model_state_service(model_state):
+            rospy.loginfo('set robot init state')
+        else:
+            rospy.logerr("/gazebo/set_model_state service call failed")       
   
     def step(self, action: int) -> Tuple[np.ndarray, float, bool, dict]:
         """
@@ -216,10 +212,10 @@ class RobotEnv(gym.Env):
         self.now_action = action
         if action == 0:  # turn left
             steering = STEERING
-            throttle = THROTTLE
+            throttle = 0
         elif action == 1:  # turn right
             steering = -1 * STEERING
-            throttle = THROTTLE
+            throttle = 0
         elif action == 2:  # straight
             steering = 0
             throttle = THROTTLE
@@ -236,6 +232,9 @@ class RobotEnv(gym.Env):
 
         self.steps_in_episode += 1
         self._send_action(steering, throttle)
+        
+        time.sleep(SLEEP_BETWEEN_ACTION_AND_REWARD_CALCULATION)
+
         self._update_map_completeness()
         self._update_state()
 
@@ -261,13 +260,13 @@ class RobotEnv(gym.Env):
         """
         rospy.loginfo('waiting lidar scan')
         # adapt number of sensor information to TRAINING_IMAGE_SIZE
-        self.ranges = None
-        while not self.ranges:
+        data = None
+        while data is None:
           try:
-                data = rospy.wait_for_message('/scan_filtered', LaserScan, timeout= TIMEOUT)
-                self.ranges = data.ranges
+                data = rospy.wait_for_message('/scan_filtered', LaserScan, timeout=TIMEOUT)
           except:
                 pass
+        self.ranges = data.ranges
         rospy.loginfo('end waiting scan')
         size = len(self.ranges)
         x = np.linspace(0, size - 1, TRAINING_IMAGE_SIZE)
@@ -280,15 +279,19 @@ class RobotEnv(gym.Env):
 
         rospy.loginfo('waiting odom')
         # adapt number of sensor information to TRAINING_IMAGE_SIZE
-        self.position = None
-        self.orientation = None
-        while not self.position:
+        #data = None
+        #while  data is None:
+        #  try:
+        #        data = rospy.wait_for_message('/odom', Odometry, timeout=TIMEOUT)
+        #  except:
+        #        pass
+       
+        while not rospy.is_shutdown():
           try:
-                data = rospy.wait_for_message('/odom', Odometry, timeout=TIMEOUT)
-                self.position = data.pose.pose.position
-                self.orientation = data.pose.pose.orientation
-          except:
-                pass
+              # listen to transform
+              (self.position, self.orientation) = listener.lookupTransform('/map', '/base_link', rospy.Time(0))
+          except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
+              pass 
         rospy.loginfo('end waiting odom')
 
         numeric_state = np.array([
@@ -323,16 +326,15 @@ class RobotEnv(gym.Env):
     def _update_map_completeness(self) -> None:
         
         rospy.loginfo('waiting map')
-        self.occupancy_grid = None
-        while not self.occupancy_grid:
+        data = None
+        while data is None:
           try:
                 data = rospy.wait_for_message('/map', OccupancyGrid, timeout=TIMEOUT)
-                self.occupancy_grid = data.data
           except:
                 pass
-        
         rospy.loginfo('ended waiting map')
 
+        self.occupancy_grid = data.data
         sum_grid = len(self.occupancy_grid)
         num_occupied = 0
         num_unoccupied = 0
@@ -350,7 +352,11 @@ class RobotEnv(gym.Env):
     def _send_action(self, steering: float, throttle: float) -> None:
         speed = Twist()
         speed.angular.z = steering
+        speed.angular.x = 0
+        speed.angular.y = 0
         speed.linear.x = throttle
+        speed.linear.y = 0
+        speed.linear.z = 0
         self.ack_publisher.publish(speed)
 
     def render(self, mode='human') -> None:
