@@ -9,7 +9,7 @@ from gym import spaces
 import numpy as np
 import rospy
 import rosparam
-import tf2
+import tf2_ros
 from nav_msgs.srv import GetMap
 from nav_msgs.msg import Odometry, OccupancyGrid
 from geometry_msgs.msg import Twist, Point, Quaternion
@@ -71,6 +71,8 @@ class RobotEnv(gym.Env):
 
     def __init__(self) -> None:
 
+        rospy.init_node('rl_dqn', anonymous=True)
+
         self.position = Point(INITIAL_POS_X, INITIAL_POS_Y, 0)
         self.orientation = Quaternion(1, 0, 0, 0)
         self.ranges = None
@@ -121,8 +123,8 @@ class RobotEnv(gym.Env):
         self.unpause = rospy.ServiceProxy('/gazebo/unpause_physics', Empty)
         self.pause = rospy.ServiceProxy('/gazebo/pause_physics', Empty)
         self.reset_proxy = rospy.ServiceProxy('/gazebo/reset_simulation', Empty)
-        self.listener = tf.TransformListener()
-        rospy.init_node('rl_dqn', anonymous=True)
+        self.tfBuffer = tf2_ros.Buffer()
+        self.listener = tf2_ros.TransformListener(self.tfBuffer)
 
     def reset(self) -> np.ndarray:
         """
@@ -157,7 +159,7 @@ class RobotEnv(gym.Env):
         self.next_state = None
         self.ranges = None
 
-        # self._update_map_completeness()
+        self._update_map_completeness()
         self._update_state()
 
         rospy.wait_for_service('/gazebo/pause_physics')
@@ -278,7 +280,6 @@ class RobotEnv(gym.Env):
         self.min_distance = np.amin(sensor_state)
 
         rospy.loginfo('waiting odom')
-        # adapt number of sensor information to TRAINING_IMAGE_SIZE
         #data = None
         #while  data is None:
         #  try:
@@ -286,14 +287,21 @@ class RobotEnv(gym.Env):
         #  except:
         #        pass
        
-        while not rospy.is_shutdown():
+        trans = None
+        while trans is None:
           try:
               # listen to transform
-              (self.position, self.orientation) = listener.lookupTransform('/map', '/base_link', rospy.Time(0))
-          except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
-              pass 
+              trans = self.tfBuffer.lookup_transform('map', 'base_link', rospy.Time(0))
+          except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
+              pass
         rospy.loginfo('end waiting odom')
 
+        self.position.x = trans.transform.translation.x
+        self.position.y = trans.transform.translation.y
+        self.orientation.z = trans.transform.rotation.z
+        #self.position.x = data.pose.pose.position.x
+        #self.position.y = data.pose.pose.position.y
+        #self.orientation.z = data.pose.pose.orientation.z
         numeric_state = np.array([
             self.position.x,
             self.position.y,
@@ -352,11 +360,7 @@ class RobotEnv(gym.Env):
     def _send_action(self, steering: float, throttle: float) -> None:
         speed = Twist()
         speed.angular.z = steering
-        speed.angular.x = 0
-        speed.angular.y = 0
         speed.linear.x = throttle
-        speed.linear.y = 0
-        speed.linear.z = 0
         self.ack_publisher.publish(speed)
 
     def render(self, mode='human') -> None:
