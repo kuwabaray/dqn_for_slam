@@ -12,13 +12,13 @@ import rosparam
 import tf2_ros
 from nav_msgs.srv import GetMap
 from nav_msgs.msg import Odometry, OccupancyGrid
-from geometry_msgs.msg import Twist, Point, Quaternion
+from geometry_msgs.msg import Twist, Point, Quaternion, PoseWithCovarianceStamped
 from gazebo_msgs.srv import SetModelState
 from gazebo_msgs.msg import ModelState
 from sensor_msgs.msg import LaserScan
 from std_srvs.srv import Empty
+from robot_localization.srv import SetPose
 
-# from gmapping.srv import SlamCmd
 from .. import rl_worker
 
 
@@ -125,6 +125,7 @@ class RobotEnv(gym.Env):
         self.reset_proxy = rospy.ServiceProxy('/gazebo/reset_simulation', Empty)
         self.tfBuffer = tf2_ros.Buffer()
         self.listener = tf2_ros.TransformListener(self.tfBuffer)
+        self.reset_odom_to_base = rospy.ServiceProxy('/set_pose', SetPose)
 
     def reset(self) -> np.ndarray:
         """
@@ -132,22 +133,6 @@ class RobotEnv(gym.Env):
         """
         rospy.loginfo('start resetting')
 
-        rospy.wait_for_service('/gazebo/unpause_physics')
-        try:
-            self.unpause()
-        except (rospy.ServiceException) as e:
-            rospy.loginfo("/gazebo/unpause_physics service call failed")
-        
-        self._send_action(0, 0)
-        self._rosbot_reset()
- 
-        # clear map
-        rospy.wait_for_service('/clear_map')
-        if self.map_reset_service():
-            rospy.loginfo('reset map')
-        else:
-            rospy.logerr('could not reset map')
-         
         self.done = False
         self.position = Point(INITIAL_POS_X, INITIAL_POS_Y, 0)
         self.orientation = Quaternion(1, 0, 0, 0)
@@ -159,6 +144,24 @@ class RobotEnv(gym.Env):
         self.next_state = None
         self.ranges = None
 
+        self._reset_tf()
+
+        rospy.wait_for_service('/gazebo/unpause_physics')
+        try:
+            self.unpause()
+        except (rospy.ServiceException) as e:
+            rospy.loginfo("/gazebo/unpause_physics service call failed")
+        
+        self._send_action(0, 0)
+        self._reset_rosbot()
+ 
+        # clear map
+        rospy.wait_for_service('/clear_map')
+        if self.map_reset_service():
+            rospy.loginfo('reset map')
+        else:
+            rospy.logerr('could not reset map')
+         
         self._update_map_completeness()
         self._update_state()
 
@@ -172,7 +175,18 @@ class RobotEnv(gym.Env):
         # TODO (Kuwabara): add process when self.next_stage is None
         return self.next_state
 
-    def _rosbot_reset(self) -> None:
+    def _reset_tf(self) -> None:
+        rospy.wait_for_service('/set_pose')
+        tf_pose = PoseWithCovarianceStamped()
+        tf_pose.pose.pose.position.x = self.position.x
+        tf_pose.pose.pose.position.y = self.position.y
+        tf_pose.pose.pose.orientation.w = self.orientation.w
+        if self.reset_odom_to_base(tf_pose):
+            rospy.loginfo('initializa tf')
+        else:
+            rospy.logerr('/set_pose service call failed')
+
+    def _reset_rosbot(self) -> None:
         """
         """
         rospy.wait_for_service('gazebo/set_model_state')
@@ -280,13 +294,6 @@ class RobotEnv(gym.Env):
         self.min_distance = np.amin(sensor_state)
 
         rospy.loginfo('waiting odom')
-        #data = None
-        #while  data is None:
-        #  try:
-        #        data = rospy.wait_for_message('/odom', Odometry, timeout=TIMEOUT)
-        #  except:
-        #        pass
-       
         trans = None
         while trans is None:
           try:
@@ -299,9 +306,6 @@ class RobotEnv(gym.Env):
         self.position.x = trans.transform.translation.x
         self.position.y = trans.transform.translation.y
         self.orientation.z = trans.transform.rotation.z
-        #self.position.x = data.pose.pose.position.x
-        #self.position.y = data.pose.pose.position.y
-        #self.orientation.z = data.pose.pose.orientation.z
         numeric_state = np.array([
             self.position.x,
             self.position.y,
