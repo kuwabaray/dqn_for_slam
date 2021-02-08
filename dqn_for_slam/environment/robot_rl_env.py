@@ -34,6 +34,7 @@ INITIAL_POS_X = rospy.get_param('rlslam/initial_posx')
 INITIAL_POS_Y = rospy.get_param('rlslam/initial_posy')
 
 LIDAR_SCAN_MAX_DISTANCE = rospy.get_param('rlslam/scan_max_distance')
+LIDAR_SCAN_MIN_DISTANCE = rospy.get_param('rlslam/scan_min_distance')
 TRAINING_IMAGE_SIZE = rospy.get_param('rlslam/training_image_size')
 MAP_SIZE_RATIO = rospy.get_param('rlslam/map_size_ratio')
 MAP_COMPLETENESS_THRESHOLD = rospy.get_param('rlslam/map_completed_threshold')
@@ -61,7 +62,6 @@ THROTTLE = rospy.get_param('rlslam/throttle')
 
 TIMEOUT = rospy.get_param('rlslam/timeout')
 
-SLEEP_BETWEEN_ACTION_AND_REWARD_CALCULATION =rospy.get_param('rlslam/sleep')
 
 
 class RobotEnv(gym.Env):
@@ -95,7 +95,7 @@ class RobotEnv(gym.Env):
 
         # define observation space
         scan_high = np.array([LIDAR_SCAN_MAX_DISTANCE] * TRAINING_IMAGE_SIZE)
-        scan_low = np.array([0.0] * TRAINING_IMAGE_SIZE)
+        scan_low = np.array([LIDAR_SCAN_MIN_DISTANCE] * TRAINING_IMAGE_SIZE)
         num_high = np.array([
             MAX_PX,
             MAX_PY,
@@ -228,10 +228,10 @@ class RobotEnv(gym.Env):
         self.now_action = action
         if action == 0:  # turn left
             steering = STEERING
-            throttle = 0
+            throttle = THROTTLE
         elif action == 1:  # turn right
             steering = -1 * STEERING
-            throttle = 0
+            throttle = THROTTLE
         elif action == 2:  # straight
             steering = 0
             throttle = THROTTLE
@@ -348,7 +348,7 @@ class RobotEnv(gym.Env):
         size = len(self.ranges)
         x = np.linspace(0, size - 1, TRAINING_IMAGE_SIZE)
         xp = np.arange(size)
-        sensor_state = np.clip(np.interp(x, xp, self.ranges), 0, LIDAR_SCAN_MAX_DISTANCE)
+        sensor_state = np.clip(np.interp(x, xp, self.ranges), LIDAR_SCAN_MIN_DISTANCE, LIDAR_SCAN_MAX_DISTANCE)
         sensor_state[np.isnan(sensor_state)] = LIDAR_SCAN_MAX_DISTANCE
 
         # update distance to obstacles
@@ -367,12 +367,13 @@ class RobotEnv(gym.Env):
         self.position.x = trans.transform.translation.x
         self.position.y = trans.transform.translation.y
         self.orientation.z = trans.transform.rotation.z
+        left_steps = MAX_STEPS - self.steps_in_episode
         numeric_state = np.array([
             self.position.x,
             self.position.y,
             self.orientation.z,
             self.last_action,
-            self.steps_in_episode,
+            left_steps,
             self.map_completeness_pct
         ])
 

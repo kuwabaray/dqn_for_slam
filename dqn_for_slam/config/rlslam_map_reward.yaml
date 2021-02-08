@@ -18,14 +18,14 @@ rlslam:
   map_size_ratio: 0.22  
 
   scan_max_distance: 4.0
-  training_image_size: 360
+  scan_min_distance: 0.2
+  training_image_size: 8
   crash_distance: 0.21
   map_completed_threshold: 85.
   reward_map_completed: 10.
   reward_crashed: -10.
 
   steering: 0.8
-  throttle: 0.5  
+  throttle: 0.2 
 
   timeout: 5.0
-  sleep: 1
