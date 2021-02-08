@@ -141,6 +141,8 @@ class RobotEnv(gym.Env):
         self.reward_in_episode = 0
         self.occupancy_grid = None
         self.ranges = None
+        self.tfBuffer = tf2_ros.Buffer()
+        self.listener = tf2_ros.TransformListener(self.tfBuffer)
 
         self._reset_tf()
 
