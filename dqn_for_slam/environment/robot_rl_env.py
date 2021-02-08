@@ -249,7 +249,8 @@ class RobotEnv(gym.Env):
         self.steps_in_episode += 1
         self._send_action(steering, throttle)
         
-        time.sleep(SLEEP_BETWEEN_ACTION_AND_REWARD_CALCULATION)
+        # time.sleep(SLEEP_BETWEEN_ACTION_AND_REWARD_CALCULATION)
+        self._wait_until_twist_achieved(steering, throttle)
 
         self._update_map_completeness()
         self._update_state()
@@ -269,7 +270,67 @@ class RobotEnv(gym.Env):
         # rospy.loginfo('end step' + str(self.steps_in_episode))
         info = {}
         return self.next_state, self.reward, self.done, info
+   
+    def _wait_until_twist_achieved(self, angular_speed, linear_speed):
+        """
+        We wait for the cmd_vel twist given to be reached by the robot reading
+        Bare in mind that the angular wont be controled , because its too imprecise.
+        We will only consider to check if its moving or not inside the angular_speed_noise fluctiations it has.
+        from the odometry.
+        :param cmd_vel_value: Twist we want to wait to reach.
+        :return:
+        """
+        rospy.loginfo("START wait_until_twist_achieved...")
+        
+        epsilon = 0.05
+        update_rate = 10
+        angular_speed_noise = 0.005
+        rate = rospy.Rate(update_rate)
+        
+        angular_speed_is = self._check_angular_speed_dir(angular_speed, angular_speed_noise)
+        
+        linear_speed_plus = linear_speed + epsilon
+        linear_speed_minus = linear_speed - epsilon
+        
+        while not rospy.is_shutdown():
+            current_odometry = None
+            while current_odometry is None and not rospy.is_shutdown():
+                try:
+                    current_odometry = rospy.wait_for_message("/steer_drive_controller/odom", Odometry, timeout=TIMEOUT)
+                    rospy.logdebug("Current /odom READY=>")
 
+                except:
+                    rospy.logerr("Current /odom not ready yet, retrying for getting odom")
+
+            odom_linear_vel = current_odometry.twist.twist.linear.x
+            odom_angular_vel = current_odometry.twist.twist.angular.z
+            
+            linear_vel_are_close = (odom_linear_vel <= linear_speed_plus) and (odom_linear_vel > linear_speed_minus)
+            odom_angular_speed_is = self._check_angular_speed_dir(odom_angular_vel, angular_speed_noise)
+                
+            # We check if its turning in the same diretion or has stopped
+            angular_vel_are_close = (angular_speed_is == odom_angular_speed_is)
+            
+            if linear_vel_are_close and angular_vel_are_close:
+                rospy.logwarn("Reached Velocity!")
+                break
+            rospy.logwarn("Not there yet, keep waiting...")
+            rate.sleep()
+    
+    def _check_angular_speed_dir(self, angular_speed, angular_speed_noise):
+        """
+        It States if the speed is zero, posititive or negative
+        """
+        # We check if odom angular speed is positive or negative or "zero"
+        if (-angular_speed_noise < angular_speed <= angular_speed_noise):
+            angular_speed_is = 0
+        elif angular_speed > angular_speed_noise:
+            angular_speed_is = 1
+        elif angular_speed <= angular_speed_noise:
+            angular_speed_is = -1
+        else:
+            angular_speed_is = 0
+            rospy.logerr("Angular Speed has wrong value=="+str(angular_speed))
    
     def _update_state(self) -> None:
         """
@@ -277,7 +338,7 @@ class RobotEnv(gym.Env):
         rospy.loginfo('waiting lidar scan')
         # adapt number of sensor information to TRAINING_IMAGE_SIZE
         data = None
-        while data is None:
+        while data is None and not rospy.is_shutdown():
           try:
                 data = rospy.wait_for_message('/scan_filtered', LaserScan, timeout=TIMEOUT)
           except:
@@ -295,7 +356,7 @@ class RobotEnv(gym.Env):
 
         rospy.loginfo('waiting odom')
         trans = None
-        while trans is None:
+        while trans is None and not rospy.is_shutdown():
           try:
               # listen to transform
               trans = self.tfBuffer.lookup_transform('map', 'base_link', rospy.Time(0))
@@ -339,7 +400,7 @@ class RobotEnv(gym.Env):
         
         rospy.loginfo('waiting map')
         data = None
-        while data is None:
+        while data is None and not rospy.is_shutdown():
           try:
                 data = rospy.wait_for_message('/map', OccupancyGrid, timeout=TIMEOUT)
           except:
