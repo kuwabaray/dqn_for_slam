@@ -29,4 +29,4 @@ rlslam:
   throttle: 0.2 
 
   timeout: 5.0
-  sleep_reset_time: 0.5
+  sleep_reset_time: 1.0
