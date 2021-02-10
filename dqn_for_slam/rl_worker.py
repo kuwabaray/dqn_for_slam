@@ -3,7 +3,7 @@ import gym
 import matplotlib.pyplot as plt
 import datetime
 import os
-
+import numpy as np
 import tensorflow as tf
 from tensorflow.keras.layers import Dense, Flatten
 from tensorflow.keras.optimizers import Adam
@@ -27,11 +27,6 @@ dir_path = file_path[:(len(file_path) - len('rl_worker.py'))]
 MODELS_PATH = dir_path + 'models/'   # model save directory
 FIGURES_PATH = dir_path + 'figures/'
 
-map_completeness = []
-
-
-def add_map_completeness(value: float) -> None:
-    map_completeness.append(value)
 
 def kill_all_nodes() -> None:
     """
@@ -89,10 +84,10 @@ if __name__ == '__main__':
     plt.xlabel("episode")
     plt.ylabel("reward")
 
-    fig = plt.figure()
-    plt.plot(map_completeness)
-    plt.xlabel('episode')
-    plt.ylabel('map completeness')
+    #plt.subplot(2,1,2)
+    #plt.plot(data_range, map_stack.map_completeness)
+    #plt.xlabel('episode')
+    #plt.ylabel('map completeness')
 
     plt.savefig(FIGURES_PATH + 'learning_results_{}{}{}.png'
                 .format(dt_now.month, dt_now.day, dt_now.hour))
