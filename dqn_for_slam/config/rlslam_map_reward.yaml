@@ -15,7 +15,7 @@ rlslam:
     py: -5.
     qz: -inf
 
-  map_size_ratio: 0.22  
+  maze_size: 22  
 
   scan_max_distance: 4.0
   scan_min_distance: 0.2

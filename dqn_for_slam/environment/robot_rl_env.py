@@ -11,7 +11,7 @@ import rospy
 import rosparam
 import tf2_ros
 from nav_msgs.srv import GetMap
-from nav_msgs.msg import Odometry, OccupancyGrid
+from nav_msgs.msg import Odometry, OccupancyGrid, MapMetaData
 from geometry_msgs.msg import Twist, Point, Quaternion, PoseWithCovarianceStamped
 from gazebo_msgs.srv import SetModelState
 from gazebo_msgs.msg import ModelState
@@ -34,7 +34,7 @@ INITIAL_POS_Y = rospy.get_param('rlslam/initial_posy')
 LIDAR_SCAN_MAX_DISTANCE = rospy.get_param('rlslam/scan_max_distance')
 LIDAR_SCAN_MIN_DISTANCE = rospy.get_param('rlslam/scan_min_distance')
 TRAINING_IMAGE_SIZE = rospy.get_param('rlslam/training_image_size')
-MAP_SIZE_RATIO = rospy.get_param('rlslam/map_size_ratio')
+MAZE_SIZE = rospy.get_param('rlslam/maze_size')
 MAP_COMPLETENESS_THRESHOLD = rospy.get_param('rlslam/map_completed_threshold')
 COLLISION_THRESHOLD = rospy.get_param('rlslam/crash_distance')
 
@@ -54,6 +54,8 @@ MIN_QZ = rospy.get_param('rlslam/obs_space_min/qz')
 MIN_ACTION_NUM = -1
 MIN_STEPS = 0
 MIN_MAP_COMPLETENESS = 0.
+
+MAP_SIZE = (MAX_PX - MIN_PX) * (MAX_PY - MIN_PY)
 
 STEERING = rospy.get_param('rlslam/steering')
 THROTTLE = rospy.get_param('rlslam/throttle') 
@@ -84,6 +86,7 @@ class RobotEnv(gym.Env):
         self.now_action = -1
         self.last_action = -1
         self.last_map_completeness_pct = 0
+        self.map_size_ratio = MAZE_SIZE/MAP_SIZE
 
         # define action space
         # steering(angle) is (-1, 1), throttle(speed) is (0, 1)
@@ -158,6 +161,8 @@ class RobotEnv(gym.Env):
        
         time.sleep(SLEEP_RESET_TIME)
 
+        self._update_map_size_ratio() # sometimes map expands
+
         sensor_state = self._update_scan()
         self._update_map_completeness()
         numeric_state = self._update_odom()
@@ -209,7 +214,20 @@ class RobotEnv(gym.Env):
             rospy.loginfo('set robot init state')
         else:
             rospy.logerr("/gazebo/set_model_state service call failed")       
-  
+ 
+    def _update_map_size_ratio(self) -> None:
+        data = None
+        while data is None and not rospy.is_shutdown():
+          try:
+                data = rospy.wait_for_message('/map_metadata', MapMetaData, timeout=TIMEOUT)
+          except:
+                pass
+        width = data.resolution * data.width
+        height = data.resolution * data.height
+
+        self.map_size_ratio = float(MAZE_SIZE/(width * height))
+
+
     def step(self, action: int) -> Tuple[np.ndarray, float, bool, dict]:
         """
         run action and return results
@@ -426,7 +444,7 @@ class RobotEnv(gym.Env):
                 num_occupied += 1 
         
         self.last_map_completeness_pct = self.map_completeness_pct
-        self.map_completeness_pct = ((num_occupied + num_unoccupied) * 100 / sum_grid) / MAP_SIZE_RATIO
+        self.map_completeness_pct = ((num_occupied + num_unoccupied) * 100 / sum_grid) / self.map_size_ratio
         if self.steps_in_episode == 1:
             self.last_map_completeness_pct = self.map_completeness_pct
 
