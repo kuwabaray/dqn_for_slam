@@ -19,8 +19,6 @@ from sensor_msgs.msg import LaserScan
 from std_srvs.srv import Empty
 from robot_localization.srv import SetPose
 
-from .. import rl_worker
-
 
 file_path = __file__
 dir_path = file_path[:(len(file_path) - len('environment/robot_rl_env.py'))] + 'config/'
@@ -121,10 +119,9 @@ class RobotEnv(gym.Env):
         self.gazebo_model_state_service = rospy.ServiceProxy('/gazebo/set_model_state', SetModelState)
         self.unpause = rospy.ServiceProxy('/gazebo/unpause_physics', Empty)
         self.pause = rospy.ServiceProxy('/gazebo/pause_physics', Empty)
-        self.reset_proxy = rospy.ServiceProxy('/gazebo/reset_simulation', Empty)
+        self.reset_odom_to_base = rospy.ServiceProxy('/set_pose', SetPose)
         self.tfBuffer = tf2_ros.Buffer()
         self.listener = tf2_ros.TransformListener(self.tfBuffer)
-        self.reset_odom_to_base = rospy.ServiceProxy('/set_pose', SetPose)
 
     def reset(self) -> np.ndarray:
         """
@@ -141,21 +138,16 @@ class RobotEnv(gym.Env):
         self.reward_in_episode = 0
         self.occupancy_grid = None
         self.ranges = None
-        self.tfBuffer = tf2_ros.Buffer()
-        self.listener = tf2_ros.TransformListener(self.tfBuffer)
-
-        self._reset_tf()
 
         rospy.wait_for_service('/gazebo/unpause_physics')
         try:
             self.unpause()
         except (rospy.ServiceException) as e:
             rospy.loginfo("/gazebo/unpause_physics service call failed")
-        
+
         self._send_action(0, 0)
         self._reset_rosbot()
-
-        time.sleep(SLEEP_RESET_TIME)
+        self._reset_tf()
 
         # clear map
         rospy.wait_for_service('/clear_map')
@@ -163,7 +155,9 @@ class RobotEnv(gym.Env):
             rospy.loginfo('reset map')
         else:
             rospy.logerr('could not reset map')
-         
+       
+        time.sleep(SLEEP_RESET_TIME)
+
         sensor_state = self._update_scan()
         self._update_map_completeness()
         numeric_state = self._update_odom()
@@ -186,7 +180,7 @@ class RobotEnv(gym.Env):
         tf_pose.pose.pose.position.y = self.position.y
         tf_pose.pose.pose.orientation.w = self.orientation.w
         if self.reset_odom_to_base(tf_pose):
-            rospy.loginfo('initializa tf')
+            rospy.loginfo('initialized tf')
         else:
             rospy.logerr('/set_pose service call failed')
 
@@ -268,8 +262,6 @@ class RobotEnv(gym.Env):
         next_state = np.concatenate([sensor_state, numeric_state])
         self._infer_reward()
 
-        if self.steps_in_episode >= MAX_STEPS:
-            rl_worker.add_map_completeness(self.map_completeness_pct)
 
         info = {}
         return next_state, self.reward, self.done, info
