@@ -23,7 +23,7 @@ rlslam:
   crash_distance: 0.21
   map_completed_threshold: 85.
   reward_map_completed: 10.
-  reward_crashed: -10.
+  reward_crashed: -5.
 
   steering: 0.8
   throttle: 0.2 
