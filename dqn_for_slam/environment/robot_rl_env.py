@@ -87,7 +87,7 @@ class RobotEnv(gym.Env):
         self.last_action = -1
         self.last_map_completeness_pct = 0
         self.map_size_ratio = MAZE_SIZE/MAP_SIZE
-
+        self.steps_in_episode = 0
         # define action space
         # steering(angle) is (-1, 1), throttle(speed) is (0, 1)
         # self.action_space = spaces.Box(low=np.array([-1, 0]), high=np.array([+1, +1]), dtype=np.float32)
@@ -142,11 +142,11 @@ class RobotEnv(gym.Env):
         self.occupancy_grid = None
         self.ranges = None
 
-        rospy.wait_for_service('/gazebo/unpause_physics')
-        try:
-            self.unpause()
-        except (rospy.ServiceException) as e:
-            rospy.loginfo("/gazebo/unpause_physics service call failed")
+        #rospy.wait_for_service('/gazebo/unpause_physics')
+        #try:
+        #    self.unpause()
+        #except (rospy.ServiceException) as e:
+        #    rospy.loginfo("/gazebo/unpause_physics service call failed")
 
         self._send_action(0, 0)
         self._reset_rosbot()
@@ -159,7 +159,7 @@ class RobotEnv(gym.Env):
         else:
             rospy.logerr('could not reset map')
        
-        time.sleep(SLEEP_RESET_TIME)
+        #time.sleep(SLEEP_RESET_TIME)
 
         self._update_map_size_ratio() # sometimes map expands
 
@@ -167,11 +167,11 @@ class RobotEnv(gym.Env):
         self._update_map_completeness()
         numeric_state = self._update_odom()
 
-        rospy.wait_for_service('/gazebo/pause_physics')
-        try:
-            self.pause()
-        except (rospy.ServiceException) as e:
-            rospy.loginfo("/gazebo/pause_physics service call failed")
+        #rospy.wait_for_service('/gazebo/pause_physics')
+        #try:
+        #    self.pause()
+        #except (rospy.ServiceException) as e:
+        #    rospy.loginfo("/gazebo/pause_physics service call failed")
 
         next_state = np.concatenate([sensor_state, numeric_state])
         self._infer_reward()
@@ -234,11 +234,11 @@ class RobotEnv(gym.Env):
         """        
         # rospy.loginfo('start step' + str(self.steps_in_episode + 1))
 
-        rospy.wait_for_service('/gazebo/unpause_physics')
-        try:
-            self.unpause()
-        except (rospy.ServiceException) as e:
-            rospy.loginfo("/gazebo/unpause_physics service call failed")
+        #rospy.wait_for_service('/gazebo/unpause_physics')
+        #try:
+        #    self.unpause()
+        #except (rospy.ServiceException) as e:
+        #    rospy.loginfo("/gazebo/unpause_physics service call failed")
         
         self.last_action = self.now_action
         self.now_action = action
@@ -270,12 +270,13 @@ class RobotEnv(gym.Env):
         sensor_state = self._update_scan()
         self._update_map_completeness()
         numeric_state = self._update_odom()
-
-        rospy.wait_for_service('/gazebo/pause_physics')
-        try:
-            self.pause()
-        except (rospy.ServiceException) as e:
-            rospy.loginfo("/gazebo/pause_physics service call failed")
+        
+        #if self.steps_in_episode >= MAX_STEPS:
+        #  rospy.wait_for_service('/gazebo/pause_physics')
+        #  try:
+        #      self.pause()
+        #  except (rospy.ServiceException) as e:
+        #      rospy.loginfo("/gazebo/pause_physics service call failed")
 
         next_state = np.concatenate([sensor_state, numeric_state])
         self._infer_reward()
