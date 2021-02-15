@@ -36,7 +36,7 @@ include_directories(
 ## Mark executable scripts (Python etc.) for installation
 ## in contrast to setup.py, you can choose the destination
 catkin_install_python(PROGRAMS
-  dqn_for_slam/rl_worker.py
+  scripts/rl_worker.py
   DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
  )
 
