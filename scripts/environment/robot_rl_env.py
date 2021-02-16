@@ -2,9 +2,11 @@ from typing import Tuple
 import logging
 import time
 import os
+import datetime
 
 import gym
 from gym import spaces
+import matplotlib.pyplot as plt
 import numpy as np
 import rospy
 import rosparam
@@ -62,6 +64,12 @@ THROTTLE = rospy.get_param('rlslam/throttle')
 TIMEOUT = rospy.get_param('rlslam/timeout')
 SLEEP_RESET_TIME = rospy.get_param('rlslam/sleep_reset_time')
 
+dir_path = file_path[:(len(file_path) - len('scripts/environment/robot_rl_env.py'))]
+FIGURES_PATH = dir_path + 'figures/'
+
+dt_now = datetime.datetime.now()
+FIGURE_FILE_NAME = FIGURES_PATH + 'map_completeness_{}{}{}.png'.format(dt_now.month, dt_now.day, dt_now.hour) 
+
 
 class RobotEnv(gym.Env):
     """
@@ -87,6 +95,9 @@ class RobotEnv(gym.Env):
         self.last_map_completeness = 0
         self.map_size_ratio = MAZE_SIZE/MAP_SIZE
         self.steps_in_episode = 0
+
+        self.map_records = []
+
         # define action space
         # steering(angle) is (-1, 1), throttle(speed) is (0, 1)
         # self.action_space = spaces.Box(low=np.array([-1, 0]), high=np.array([+1, +1]), dtype=np.float32)
@@ -131,6 +142,9 @@ class RobotEnv(gym.Env):
         initiate status and  return the first observed values
         """
         rospy.loginfo('start resetting')
+ 
+        if self.last_action != -1:
+            self._record_map_completeness()
 
         self.done = False
         self.position = Point(INITIAL_POS_X, INITIAL_POS_Y, 0)
@@ -177,6 +191,15 @@ class RobotEnv(gym.Env):
         next_state = np.concatenate([sensor_state, numeric_state])
         # TODO (Kuwabara): add process when self.next_stage is None
         return next_state
+
+    def _record_map_completeness(self) -> None:
+        rospy.loginfo('map record')
+        self.map_records.append(self.map_completeness)
+        plt.figure(num=1, clear=True)
+        plt.xlabel('epoch')
+        plt.ylabel('map completeness')
+        plt.plot(self.map_records)
+        plt.savefig(FIGURE_FILE_NAME)
 
     def _reset_tf(self) -> None:
         rospy.wait_for_service('/set_pose')
@@ -460,6 +483,16 @@ class RobotEnv(gym.Env):
         speed.angular.z = steering
         speed.linear.x = throttle
         self.ack_publisher.publish(speed)
+
+    def close(self) -> None:
+        # save figure
+        self._record_map_completeness()
+        # kill all ros node except for roscore
+        nodes = os.popen('rosnode list').readlines()
+        for i in range(len(nodes)):
+            nodes[i] = nodes[i].replace('\n', '')
+        for node in nodes:
+            os.system('rosnode kill ' + node)
 
     def render(self, mode='human') -> None:
         """

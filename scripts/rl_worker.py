@@ -26,17 +26,6 @@ MODELS_PATH = dir_path + 'models/'   # model save directory
 FIGURES_PATH = dir_path + 'figures/'
 
 
-def kill_all_nodes() -> None:
-    """
-    kill all ros node except for roscore
-    """
-    nodes = os.popen('rosnode list').readlines()
-    for i in range(len(nodes)):
-        nodes[i] = nodes[i].replace('\n', '')
-    for node in nodes:
-        os.system('rosnode kill ' + node)    
-
-
 if __name__ == '__main__':
     rospy.init_node('rl_worker', anonymous=True)
     mode = rospy.get_param('mode', 'train')
@@ -70,19 +59,18 @@ if __name__ == '__main__':
         #tensorboard_callback = TensorBoard(log_dir="~/tflog/")
         # early_stopping = EarlyStopping(monitor='episode_reward', patience=0, verbose=1)
         history = agent.fit(env,
-                            nb_steps=99900,
+                            nb_steps=600,
                             visualize=False,
                             nb_max_episode_steps=300,
                             log_interval=300,
                             verbose=1)
 
-        kill_all_nodes()    
+        env.close()
 
         dt_now = datetime.datetime.now()
         agent.save_weights(
             MODELS_PATH + 'dpg_{}_weights_{}{}{}.h5f'.format(ENV_NAME, dt_now.month, dt_now.day, dt_now.hour),
             overwrite=True)
-        # agent.test(env, nb_episodes=5, visualize=False)
 
         fig = plt.figure()
         plt.plot(history.history['episode_reward'])
