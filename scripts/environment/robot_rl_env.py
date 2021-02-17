@@ -194,7 +194,7 @@ class RobotEnv(gym.Env):
 
     def _record_map_completeness(self) -> None:
         rospy.loginfo('map record')
-        self.map_records.append(self.map_completeness)
+        self.map_records.append(100*self.map_completeness)
         plt.figure(num=1, clear=True)
         plt.xlabel('epoch')
         plt.ylabel('map completeness')
