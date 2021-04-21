@@ -41,7 +41,7 @@ if __name__ == '__main__':
     model.add(Dense(nb_actions))
     print(model.summary())
 
-    memory = SequentialMemory(limit=99900, window_length=1)
+    memory = SequentialMemory(limit=1200, window_length=1)
     policy = CustomEpsGreedy(max_eps=0.6, min_eps=0.1, eps_decay=0.9997)
 
     agent = DQNAgent(
@@ -59,7 +59,7 @@ if __name__ == '__main__':
         #tensorboard_callback = TensorBoard(log_dir="~/tflog/")
         # early_stopping = EarlyStopping(monitor='episode_reward', patience=0, verbose=1)
         history = agent.fit(env,
-                            nb_steps=600,
+                            nb_steps=1200,
                             visualize=False,
                             nb_max_episode_steps=300,
                             log_interval=300,

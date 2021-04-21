@@ -59,7 +59,8 @@ MIN_MAP_COMPLETENESS = 0.
 MAP_SIZE = (MAX_PX - MIN_PX) * (MAX_PY - MIN_PY)
 
 STEERING = rospy.get_param('rlslam/steering')
-THROTTLE = rospy.get_param('rlslam/throttle') 
+LINEAR_THROTTLE = rospy.get_param('rlslam/linear_throttle') 
+TURN_THROTTLE = rospy.get_param('rlslam/turn_throttle')
 
 TIMEOUT = rospy.get_param('rlslam/timeout')
 SLEEP_RESET_TIME = rospy.get_param('rlslam/sleep_reset_time')
@@ -95,8 +96,8 @@ class RobotEnv(gym.Env):
         self.last_map_completeness = 0
         self.map_size_ratio = MAZE_SIZE/MAP_SIZE
         self.steps_in_episode = 0
-
         self.map_records = []
+        self.is_crashed = False
 
         # define action space
         # steering(angle) is (-1, 1), throttle(speed) is (0, 1)
@@ -156,6 +157,7 @@ class RobotEnv(gym.Env):
         self.reward = None
         self.now_action = -1
         self.last_action = -1
+        self.is_crashed = False
 
         rospy.wait_for_service('/gazebo/unpause_physics')
         try:
@@ -178,7 +180,8 @@ class RobotEnv(gym.Env):
 
         self._update_map_size_ratio() # sometimes map expands
         sensor_state = self._update_scan()
-        self._reset_map_completeness()
+        self._update_map_completeness()
+        #self._reset_map_completeness()
 
         numeric_state = self._update_odom()
 
@@ -191,6 +194,23 @@ class RobotEnv(gym.Env):
         next_state = np.concatenate([sensor_state, numeric_state])
         # TODO (Kuwabara): add process when self.next_stage is None
         return next_state
+
+    def _check_publishers_connection(self):
+        """
+        Checks that all the publishers are working
+        :return:
+        """
+        rate = rospy.Rate(10)  # 10hz
+        while self.ack_publisher.get_num_connections() == 0 and not rospy.is_shutdown():
+            rospy.loginfo("No susbribers to _cmd_vel_pub yet so we wait and try again")
+            try:
+                rate.sleep()
+            except rospy.ROSInterruptException:
+                # This is to avoid error when world is rested, time when backwards.
+                pass
+        rospy.loginfo("_cmd_vel_pub Publisher Connected")
+
+        rospy.loginfo("All Publishers READY")
 
     def _record_map_completeness(self) -> None:
         rospy.loginfo('map record')
@@ -252,14 +272,19 @@ class RobotEnv(gym.Env):
 
     def _reset_map_completeness(self) -> None:
         map_result = self.map_completeness
-        count = 1
-        while True:
+        self._update_map_completeness()
+        rate = rospy.Rate(10)
+        if map_result == 0:
+            return
+        while map_result - 0.015 < self.map_completeness:
+            time.sleep(0.1)
+        """while True:
             self._update_map_completeness()
-            if map_result == 0 or map_result >  self.map_completeness + 0.015 or count % 10 == 0:
+            if map_result == 0 or map_result >  self.map_completeness + 0.015 or count % 100 == 0:
                 break
             time.sleep(0.1)
             count += 1
-
+"""
 
     def step(self, action: int) -> Tuple[np.ndarray, float, bool, dict]:
         """
@@ -275,16 +300,16 @@ class RobotEnv(gym.Env):
         self.now_action = action
         if action == 0:  # turn left
             steering = STEERING
-            throttle = THROTTLE
+            throttle = TURN_THROTTLE
         elif action == 1:  # turn right
             steering = -1 * STEERING
-            throttle = THROTTLE
+            throttle = TURN_THROTTLE
         elif action == 2:  # straight
             steering = 0
-            throttle = THROTTLE
+            throttle = LINEAR_THROTTLE
         elif action == 3:  # backward
             steering = 0
-            throttle = -1 * THROTTLE
+            throttle = -1*LINEAR_THROTTLE
         else:
             raise ValueError("Invalid action")
 
@@ -360,6 +385,7 @@ class RobotEnv(gym.Env):
             
             roop_count += 1
             if roop_count >= 3:
+                self.is_crashed = True
                 rospy.logwarn('its regarded as crashed')
                 break
             
@@ -436,8 +462,7 @@ class RobotEnv(gym.Env):
     def _infer_reward(self) -> None:
         """
         """
-        
-        if self.min_distance < COLLISION_THRESHOLD:
+        if self.is_crashed or self.min_distance < COLLISION_THRESHOLD:
             # Robot likely hit the wall
             self.reward = REWARD_CRASHED
             state = 'crashed'
@@ -445,8 +470,13 @@ class RobotEnv(gym.Env):
             self.reward = REWARD_MAP_COMPLETED
             state = 'comp'
         else:
-            self.reward = self.map_completeness - self.last_map_completeness
-            state = ''
+            gap = self.map_completeness - self.last_map_completeness
+            if gap >= 0:
+                self.reward = self.map_completeness - self.last_map_completeness
+                state = ''
+            else:
+                self.reward = 0
+                state = 'not initialized yet'
         
         self.reward_in_episode += self.reward
         rospy.loginfo('reward:' + str(self.reward) + ' ' + state)
@@ -472,9 +502,12 @@ class RobotEnv(gym.Env):
                 num_unoccupied += 1
             elif n == 100:
                 num_occupied += 1 
-        
+       
         self.last_map_completeness = self.map_completeness
         self.map_completeness = ((num_occupied + num_unoccupied) / sum_grid) / self.map_size_ratio
+        
+        #if not self.map_initialized and abs(self.map_completeness_record - self.last_map_completeness) > 0.1:
+        #    self.map_initialized = True
 
         rospy.loginfo('map completenes pct:' + str(self.map_completeness * 100)) 
     
@@ -482,6 +515,7 @@ class RobotEnv(gym.Env):
         speed = Twist()
         speed.angular.z = steering
         speed.linear.x = throttle
+        self._check_publishers_connection()
         self.ack_publisher.publish(speed)
 
     def close(self) -> None:
