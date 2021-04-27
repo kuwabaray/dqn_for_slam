@@ -424,7 +424,7 @@ class RobotEnv(gym.Env):
         mod = len(data.ranges)/TRAINING_IMAGE_SIZE
         for i, item in enumerate(data.ranges):
             if (i%mod==0):
-                if np.isnan(data.ranges[i]):
+                if np.isinf(data.ranges[i]):
                     sensor_state.append(LIDAR_SCAN_MAX_DISTANCE + 1.0)
                 else:
                     sensor_state.append(data.ranges[i])
@@ -456,6 +456,8 @@ class RobotEnv(gym.Env):
             left_steps,
             self.map_completeness
         ])
+
+        rospy.loginfo('x:' + str(self.position.x) + ' y:' + str(self.position.y))
 
         return numeric_state
 
